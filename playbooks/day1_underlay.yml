@@ -6,8 +6,25 @@
 
   vars:
     config_dir: "/tmp/day1/underlay"
+    supervisord_conf: "/etc/supervisor/conf.d/supervisord.conf"
 
   tasks:
+    - name: "Disable zebra asic-offload (SONiC-VS FIB workaround)"
+      ansible.builtin.replace:
+        path: "{{ supervisord_conf }}"
+        regexp: '--asic-offload=notify_on_offload'
+        replace: ''
+      register: zebra_fix
+
+    - name: "Restart zebra to pick up new flags"
+      ansible.builtin.command: supervisorctl restart zebra
+      when: zebra_fix.changed
+
+    - name: "Wait for zebra to stabilize"
+      ansible.builtin.wait_for:
+        timeout: 5
+      when: zebra_fix.changed
+
     - name: "Copy partial config_db.json to device"
       ansible.builtin.copy:
         src: "{{ config_dir }}/{{ inventory_hostname }}.json"
