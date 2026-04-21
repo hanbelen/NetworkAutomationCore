@@ -1,12 +1,36 @@
 ---
-- name: "DAY0 — Push minimal SONiC config to discovered devices"
+# Play 1: Change password from SONiC default to 'admin'
+# Uses the factory default password to connect. Idempotent — safe to re-run.
+- name: "DAY0 — Set admin password"
   hosts: all
   gather_facts: false
   become: true
+  vars:
+    sonic_default_password: "YourPaSsWoRd"
+    target_password: "admin"
+  tasks:
+    - name: "Try connecting with target password first"
+      ansible.builtin.command: whoami
+      changed_when: false
+      ignore_errors: true
+      register: target_check
 
+    - name: "Connect with factory default and change password"
+      ansible.builtin.user:
+        name: admin
+        password: "{{ target_password | password_hash('sha512') }}"
+      vars:
+        ansible_password: "{{ sonic_default_password }}"
+        ansible_become_password: "{{ sonic_default_password }}"
+      when: target_check is failed
+
+# Play 2: Push day0 config (uses inventory password — 'admin')
+- name: "DAY0 — Push minimal SONiC config"
+  hosts: all
+  gather_facts: false
+  become: true
   vars:
     config_dir: "/tmp/day1/configs"
-
   tasks:
     - name: "Copy Day0 config_db.json to device"
       ansible.builtin.copy:
@@ -26,11 +50,6 @@
       ansible.builtin.wait_for:
         timeout: 15
       when: config_copy.changed
-
-    - name: "Change admin password"
-      ansible.builtin.user:
-        name: admin
-        password: "{{ 'admin' | password_hash('sha512') }}"
 
     - name: "Verify hostname applied"
       ansible.builtin.command: hostname
