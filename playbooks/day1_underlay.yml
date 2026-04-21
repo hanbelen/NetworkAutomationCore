@@ -28,7 +28,7 @@
         mode: "0644"
 
     - name: "Apply BGP unnumbered config via vtysh"
-      ansible.builtin.command: vtysh -f /tmp/underlay_bgp.vtysh
+      ansible.builtin.shell: cat /tmp/underlay_bgp.vtysh | vtysh
 
     - name: "Persist config_db to disk"
       ansible.builtin.command: config save -y
