@@ -65,25 +65,13 @@ def run_fping(cidr):
     return [ip.strip() for ip in result.stdout.strip().splitlines() if ip.strip()]
 
 
-def classify_ip(site_slug, ip, role_offsets, gateway_offset, border_dci=None):
+def classify_ip(site_slug, ip, role_offsets, gateway_offset):
     octets = ip.split('.')
     pod = int(octets[2])
     host = int(octets[3])
 
     if host == gateway_offset:
         return None
-
-    # Check DCI border range first (higher offset takes precedence)
-    if border_dci and host >= border_dci['offset']:
-        role = 'brl'
-        device_id = (host - border_dci['offset']) + border_dci['id_start']
-        return {
-            'hostname':  f"{site_slug}-a-p{pod}-{role}-{device_id:02d}",
-            'role':      role,
-            'pod':       pod,
-            'device_id': device_id,
-            'mgmt_ip':   ip,
-        }
 
     # Match host octet against role offset ranges
     sorted_roles = sorted(role_offsets.items(), key=lambda kv: kv[1])
@@ -211,7 +199,6 @@ def main():
     gateway_offset = ip_plan['mgmt']['gateway_offset']
     role_offsets = ip_plan['role_offsets']
     border_pod_id = ip_plan['border_pod_id']
-    border_dci = ip_plan.get('border_dci')
     profiles = defaults.get('device_profiles', {})
     border_overrides = defaults.get('border_pod_overrides', {})
     sonic_defaults = defaults.get('sonic_defaults', {})
@@ -227,7 +214,7 @@ def main():
 
     devices = []
     for ip in alive_ips:
-        dev = classify_ip(args.site, ip, role_offsets, gateway_offset, border_dci)
+        dev = classify_ip(args.site, ip, role_offsets, gateway_offset)
         if dev:
             enrich_device(dev, profiles, border_overrides, border_pod_id)
             devices.append(dev)
