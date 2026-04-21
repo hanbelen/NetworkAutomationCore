@@ -1,30 +1,20 @@
 ---
-# Play 1: Change password from SONiC default to 'admin'
-# Uses the factory default password to connect. Idempotent — safe to re-run.
+# Play 1: Change password from SONiC factory default to 'admin'
+# Overrides inventory credentials with factory default to connect.
 - name: "DAY0 — Set admin password"
   hosts: all
   gather_facts: false
   become: true
   vars:
-    sonic_default_password: "YourPaSsWoRd"
-    target_password: "admin"
+    ansible_password: "YourPaSsWoRd"
+    ansible_become_password: "YourPaSsWoRd"
   tasks:
-    - name: "Try connecting with target password first"
-      ansible.builtin.command: whoami
-      changed_when: false
-      ignore_errors: true
-      register: target_check
-
-    - name: "Connect with factory default and change password"
+    - name: "Set admin password"
       ansible.builtin.user:
         name: admin
-        password: "{{ target_password | password_hash('sha512') }}"
-      vars:
-        ansible_password: "{{ sonic_default_password }}"
-        ansible_become_password: "{{ sonic_default_password }}"
-      when: target_check is failed
+        password: "{{ 'admin' | password_hash('sha512') }}"
 
-# Play 2: Push day0 config (uses inventory password — 'admin')
+# Play 2: Push day0 config (uses inventory credentials — admin/admin)
 - name: "DAY0 — Push minimal SONiC config"
   hosts: all
   gather_facts: false
