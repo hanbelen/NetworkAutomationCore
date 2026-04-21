@@ -32,6 +32,11 @@
         backup: true
       register: config_copy
 
+    - name: "Validate config_db.json syntax"
+      ansible.builtin.command: python3 -m json.tool /etc/sonic/config_db.json
+      changed_when: false
+      when: config_copy.changed
+
     - name: "Reload SONiC configuration"
       ansible.builtin.command: config reload -y
       when: config_copy.changed
