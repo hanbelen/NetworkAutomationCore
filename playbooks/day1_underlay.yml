@@ -1,0 +1,43 @@
+---
+- name: "DAY1 — Deploy eBGP unnumbered underlay"
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    config_dir: "/tmp/day1/underlay"
+
+  tasks:
+    - name: "Copy partial config_db.json to device"
+      ansible.builtin.copy:
+        src: "{{ config_dir }}/{{ inventory_hostname }}.json"
+        dest: /tmp/underlay_config.json
+        mode: "0644"
+
+    - name: "Validate JSON syntax"
+      ansible.builtin.command: python3 -m json.tool /tmp/underlay_config.json
+      changed_when: false
+
+    - name: "Merge partial config into running config_db"
+      ansible.builtin.command: sonic-cfggen -j /tmp/underlay_config.json --write-to-db
+
+    - name: "Copy vtysh commands to device"
+      ansible.builtin.copy:
+        src: "{{ config_dir }}/{{ inventory_hostname }}.vtysh"
+        dest: /tmp/underlay_bgp.vtysh
+        mode: "0644"
+
+    - name: "Apply BGP unnumbered config via vtysh"
+      ansible.builtin.command: vtysh -f /tmp/underlay_bgp.vtysh
+
+    - name: "Persist config_db to disk"
+      ansible.builtin.command: config save -y
+
+    - name: "Verify BGP ASN applied"
+      ansible.builtin.command: sonic-cfggen -d -v "DEVICE_METADATA['localhost']['bgp_asn']"
+      register: bgp_asn
+      changed_when: false
+
+    - name: "Report"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} — ASN={{ bgp_asn.stdout }}"

@@ -1,0 +1,15 @@
+---
+- name: "VERIFY — Check BGP session status"
+  hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: "Get BGP summary"
+      ansible.builtin.command: vtysh -c "show ip bgp summary"
+      register: bgp_summary
+      changed_when: false
+
+    - name: "Display BGP summary"
+      ansible.builtin.debug:
+        msg: "{{ bgp_summary.stdout_lines }}"
