@@ -1,0 +1,73 @@
+---
+- name: "DEPLOY VXLAN EVPN FABRIC"
+  hosts: syd1
+  gather_facts: false
+  become: true
+
+  pre_tasks:
+    - name: "Load global network defaults"
+      ansible.builtin.include_vars:
+        file: "/workspace/inventory/intent/global/network_defaults.yml"
+
+    - name: "Load site-wide intent data"
+      ansible.builtin.include_vars:
+        file: "/workspace/inventory/intent/sites/{{ site | default('syd1') }}/{{ item }}.yml"
+      loop:
+        - site
+        - devices
+        - topology
+        - tenants
+
+    - name: "Filter device-specific variables"
+      ansible.builtin.set_fact:
+        device_data: "{{ devices | selectattr('name', 'equalto', inventory_hostname) | first }}"
+        
+    - name: "Extract host facts from intent (SRE Profile Logic)"
+      ansible.builtin.set_fact:
+        role: "{{ device_data.role }}"
+        asn: "{{ 65000 + device_data.id | int }}"
+        loopback0: "10.1.10.{{ device_data.id }}/32"
+        loopback1_vtep: "{{ '10.1.111.' ~ device_data.id ~ '/32' if device_data.vtep | default(false) else omit }}"
+        mgmt_ip: "172.16.100.{{ device_data.id }}"
+        fabric_interfaces: "{{ fabric_intfs_list_raw | from_json }}"
+      vars:
+        fabric_intfs_list_raw: >-
+          {% set intfs = [] %}
+          {% for link in p2p_links %}
+            {% if link.a_device == inventory_hostname %}
+              {% set _ = intfs.append({'linux': link.a_linux}) %}
+            {% elif link.b_device == inventory_hostname %}
+              {% set _ = intfs.append({'linux': link.b_linux}) %}
+            {% endif %}
+          {% endfor %}
+          {{ intfs | to_json }}
+
+  tasks:
+    - name: "Enable FRR daemons"
+      ansible.builtin.template:
+        src: "../templates/daemons.j2"
+        dest: "/etc/frr/daemons"
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify: restart frr
+
+    - name: "Deploy FRR configuration"
+      ansible.builtin.template:
+        src: "../templates/frr.conf.j2"
+        dest: "/etc/frr/frr.conf"
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify: reload frr
+
+  handlers:
+    - name: restart frr
+      ansible.builtin.service:
+        name: frr
+        state: restarted
+
+    - name: reload frr
+      ansible.builtin.service:
+        name: frr
+        state: reloaded

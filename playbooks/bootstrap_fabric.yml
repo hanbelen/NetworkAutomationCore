@@ -1,0 +1,62 @@
+---
+- name: "BOOTSTRAP LINUX NODES FOR FRR L3EVPN"
+  hosts: syd1
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: "Ensure kernel modules are loaded"
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - vrf
+        - vxlan
+        - bonding
+
+    - name: "Persist kernel modules"
+      ansible.builtin.copy:
+        dest: "/etc/modules-load.d/frr-evpn.conf"
+        content: |
+          vrf
+          vxlan
+          bonding
+
+    - name: "Enable IPv4/IPv6 forwarding"
+      ansible.posix.sysctl:
+        name: "{{ item }}"
+        value: '1'
+        state: present
+        sysctl_set: true
+      loop:
+        - net.ipv4.ip_forward
+        - net.ipv6.conf.all.forwarding
+
+    - name: "Install FRR and dependencies"
+      ansible.builtin.apt:
+        name: 
+          - frr
+          - frr-pythontools
+          - iproute2
+          - snmpd
+        state: present
+        update_cache: true
+
+    - name: "Enable FRR service"
+      ansible.builtin.service:
+        name: frr
+        state: started
+        enabled: true
+
+    - name: "Allow FRR to manage VRFs in kernel"
+      ansible.posix.sysctl:
+        name: net.vrf.strict_mode
+        value: '1'
+        state: present
+        sysctl_set: true
+
+    - name: "Verify fabric interfaces exist"
+      ansible.builtin.shell: "ip link show {{ item.linux }}"
+      changed_when: false
+      loop: "{{ fabric_interfaces }}"
+      when: fabric_interfaces is defined

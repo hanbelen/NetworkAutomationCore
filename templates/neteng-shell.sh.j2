@@ -1,0 +1,41 @@
+#!/bin/bash
+# Network engineer shell - wraps vtysh with Linux network tools
+
+if [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+    # Non-interactive (single command via SSH)
+    exec vtysh -c "$SSH_ORIGINAL_COMMAND"
+fi
+
+echo "Welcome to {{ inventory_hostname }} (FRR $(vtysh -c 'show version' | head -1 | awk '{print $NF}'))"
+echo "Type 'bash' for Linux shell, 'exit' to disconnect"
+echo ""
+
+while true; do
+    read -p "$(hostname)# " -e cmd || break
+    case "$cmd" in
+        ""|" ")
+            continue
+            ;;
+        exit|quit|logout)
+            break
+            ;;
+        bash)
+            /bin/bash --login
+            ;;
+        ping*)
+            eval "$cmd"
+            ;;
+        traceroute*|tracepath*|mtr*)
+            eval "$cmd"
+            ;;
+        ssh*)
+            eval "$cmd"
+            ;;
+        ip\ *)
+            eval "$cmd"
+            ;;
+        *)
+            vtysh -c "$cmd"
+            ;;
+    esac
+done

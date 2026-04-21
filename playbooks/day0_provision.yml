@@ -1,0 +1,37 @@
+---
+- name: "DAY0 — Push minimal SONiC config to discovered devices"
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    config_dir: "/tmp/day1/configs"
+
+  tasks:
+    - name: "Copy Day0 config_db.json to device"
+      ansible.builtin.copy:
+        src: "{{ config_dir }}/{{ inventory_hostname }}.json"
+        dest: /etc/sonic/config_db.json
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+      register: config_copy
+
+    - name: "Reload SONiC configuration"
+      ansible.builtin.command: config reload -y
+      when: config_copy.changed
+
+    - name: "Wait for config reload to settle"
+      ansible.builtin.wait_for:
+        timeout: 15
+      when: config_copy.changed
+
+    - name: "Verify hostname applied"
+      ansible.builtin.command: hostname
+      register: current_hostname
+      changed_when: false
+
+    - name: "Report hostname"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → hostname is now '{{ current_hostname.stdout }}'"

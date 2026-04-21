@@ -1,0 +1,6 @@
+@Library('sre-lib') _
+
+day1Provision(
+    inventoryRepo:   'https://github.com/hanbelen/NetworkInventoryData.git',
+    automationRepo:  'https://github.com/hanbelen/NetworkAutomationCore.git',
+)

@@ -1,0 +1,71 @@
+frr defaults datacenter
+hostname {{ inventory_hostname }}
+log syslog informational
+service integrated-vtysh-config
+!
+ip nht resolve-via-default
+!
+interface lo
+ ip address {{ loopback0 }}
+{% if loopback1_vtep is defined %}
+ ip address {{ loopback1_vtep }}
+{% endif %}
+!
+{% for intf in fabric_interfaces %}
+interface {{ intf.linux }}
+ ipv6 nd ra-interval 10
+ no ipv6 nd suppress-ra
+!
+{% endfor %}
+!
+{% if role == 'leaf' %}
+{# L3VNI and VRF Configuration #}
+{% for tenant in tenants %}
+vrf {{ tenant.vrf }}
+ vni {{ tenant.l3vni }}
+exit-vrf
+!
+{% endfor %}
+{% endif %}
+!
+router bgp {{ asn }}
+ bgp router-id {{ loopback0 | ansible.utils.ipaddr('address') }}
+ bgp bestpath as-path multipath-relax
+ no bgp default ipv4-unicast
+ neighbor FABRIC peer-group
+ neighbor FABRIC remote-as external
+ neighbor FABRIC capability extended-next-hop
+{% for intf in fabric_interfaces %}
+ neighbor {{ intf.linux }} interface peer-group FABRIC
+{% endfor %}
+ !
+ address-family ipv4 unicast
+  redistribute connected
+  neighbor FABRIC activate
+ exit-address-family
+ !
+ address-family l2vpn evpn
+  neighbor FABRIC activate
+{% if role == 'leaf' %}
+  advertise-all-vni
+{% endif %}
+ exit-address-family
+!
+{% if role == 'leaf' %}
+{% for tenant in tenants %}
+router bgp {{ asn }} vrf {{ tenant.vrf }}
+ bgp router-id {{ loopback0 | ansible.utils.ipaddr('address') }}
+ !
+ address-family ipv4 unicast
+  redistribute connected
+ exit-address-family
+ !
+ address-family l2vpn evpn
+  advertise ipv4 unicast
+ exit-address-family
+!
+{% endfor %}
+{% endif %}
+!
+line vty
+!

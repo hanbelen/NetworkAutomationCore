@@ -1,0 +1,121 @@
+---
+- name: "DAY 1 - INSTALL FRR AND DEPLOY EBGP UNDERLAY"
+  hosts: syd1
+  gather_facts: true
+
+  pre_tasks:
+    - name: "Load global network defaults"
+      ansible.builtin.include_vars:
+        file: "/workspace/inventory/intent/global/network_defaults.yml"
+
+    - name: "Load site-wide intent data"
+      ansible.builtin.include_vars:
+        file: "/workspace/inventory/intent/sites/{{ site | default('syd1') }}/{{ item }}.yml"
+      loop:
+        - site
+        - devices
+        - topology
+        - tenants
+
+    - name: "Filter device-specific variables"
+      ansible.builtin.set_fact:
+        device_data: "{{ devices | selectattr('name', 'equalto', inventory_hostname) | first }}"
+
+    - name: "Extract host facts from intent (SRE Profile Logic)"
+      ansible.builtin.set_fact:
+        role: "{{ device_data.role }}"
+        asn: "{{ 65000 + device_data.id | int }}"
+        loopback0: "10.1.10.{{ device_data.id }}/32"
+        loopback1_vtep: "{{ '10.1.111.' ~ device_data.id ~ '/32' if device_data.vtep | default(false) else omit }}"
+        mgmt_ip: "172.16.100.{{ device_data.id }}"
+        fabric_interfaces: "{{ fabric_intfs_list_raw | from_json }}"
+      vars:
+        fabric_intfs_list_raw: >-
+          {% set intfs = [] %}
+          {% for link in p2p_links %}
+            {% if link.a_device == inventory_hostname %}
+              {% set _ = intfs.append({'linux': link.a_linux}) %}
+            {% elif link.b_device == inventory_hostname %}
+              {% set _ = intfs.append({'linux': link.b_linux}) %}
+            {% endif %}
+          {% endfor %}
+          {{ intfs | to_json }}
+
+  tasks:
+    - name: "Enable IP forwarding"
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        sysctl_set: true
+        state: present
+        reload: true
+
+    - name: "Set hostname"
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: "Update /etc/hosts with hostname"
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ inventory_hostname }}"
+        state: present
+
+    - name: "Install GPG key for FRR repo"
+      ansible.builtin.shell: |
+        curl -s https://deb.frrouting.org/frr/keys.gpg | tee /usr/share/keyrings/frrouting.gpg > /dev/null
+      args:
+        creates: /usr/share/keyrings/frrouting.gpg
+
+    - name: "Add FRR APT repository"
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/frrouting.gpg] https://deb.frrouting.org/frr {{ ansible_distribution_release }} frr-stable"
+        filename: frr
+        state: present
+
+    - name: "Install FRR packages"
+      ansible.builtin.apt:
+        name:
+          - frr
+          - frr-pythontools
+        state: present
+        update_cache: true
+
+    - name: "Create neteng user for vtysh CLI access"
+      ansible.builtin.user:
+        name: neteng
+        password: "{{ 'Test123' | password_hash('sha512') }}"
+        groups:
+          - frrvty
+          - frr
+        shell: /usr/bin/vtysh
+        state: present
+
+    - name: "Enable FRR daemons (bgpd + zebra)"
+      ansible.builtin.template:
+        src: "../templates/daemons.j2"
+        dest: "/etc/frr/daemons"
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify: restart frr
+
+    - name: "Deploy FRR underlay configuration"
+      ansible.builtin.template:
+        src: "../templates/frr.conf.j2"
+        dest: "/etc/frr/frr.conf"
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify: reload frr
+
+  handlers:
+    - name: restart frr
+      ansible.builtin.service:
+        name: frr
+        state: restarted
+
+    - name: reload frr
+      ansible.builtin.service:
+        name: frr
+        state: reloaded
