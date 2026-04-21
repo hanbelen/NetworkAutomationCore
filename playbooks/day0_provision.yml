@@ -27,6 +27,11 @@
         timeout: 15
       when: config_copy.changed
 
+    - name: "Change admin password"
+      ansible.builtin.user:
+        name: admin
+        password: "{{ 'admin' | password_hash('sha512') }}"
+
     - name: "Verify hostname applied"
       ansible.builtin.command: hostname
       register: current_hostname
