@@ -153,6 +153,9 @@ def generate_vtysh_commands(device, asn, loopback0_ip, active_ports):
     lines.append('exit-address-family')
 
     lines.append('exit')
+    # Disable asic-offload so zebra installs routes directly to kernel
+    # (required for SONiC-VS where virtual SAI doesn't confirm FIB offload)
+    lines.append('no zebra asic-offload')
     lines.append('end')
     lines.append('write memory')
 
