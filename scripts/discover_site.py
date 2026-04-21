@@ -141,6 +141,7 @@ def build_inventory(devices, site_slug, sonic_defaults):
                 'ansible_become_method':   sonic_defaults.get('ansible_become_method', 'sudo'),
                 'ansible_become_password': sonic_defaults.get('ansible_password', 'YourPaSsWoRd'),
                 'ansible_ssh_common_args': '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
+                'ansible_python_interpreter': '/usr/bin/python3',
             },
             'children': {
                 site_slug: {'hosts': hosts},
