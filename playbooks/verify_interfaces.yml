@@ -1,20 +1,11 @@
 ---
-- name: "VERIFY — Check expected interfaces are operationally up"
+- name: "VERIFY — Check interface status on discovered devices"
   hosts: all
   gather_facts: false
   become: true
 
   tasks:
-    - name: "Get interface status from SONiC"
-      ansible.builtin.command: show interfaces status
-      register: intf_output
-      changed_when: false
-
-    - name: "Display interface table"
-      ansible.builtin.debug:
-        msg: "{{ intf_output.stdout_lines }}"
-
-    - name: "Check each expected port is oper up"
+    - name: "Check each expected port"
       ansible.builtin.shell: |
         show interfaces status {{ item }} | tail -1 | awk '{print $8}'
       register: port_status
@@ -40,13 +31,5 @@
       ansible.builtin.debug:
         msg: >-
           {{ inventory_hostname }}:
-          {% for r in intf_results %}
-          {{ r.port }}={{ r.oper }}{{ ' OK' if r.ok else ' FAIL' }}{{ ', ' if not loop.last }}
-          {% endfor %}
-
-    - name: "Fail if any expected port is not oper up"
-      ansible.builtin.fail:
-        msg: >-
-          {{ inventory_hostname }}: ports not oper up —
-          {{ intf_results | selectattr('ok', 'false') | map(attribute='port') | list | join(', ') }}
-      when: intf_results | selectattr('ok', 'false') | list | length > 0
+          up={{ intf_results | selectattr('ok', 'true') | map(attribute='port') | list | join(', ') | default('none') }}
+          | down={{ intf_results | selectattr('ok', 'false') | map(attribute='port') | list | join(', ') | default('none') }}

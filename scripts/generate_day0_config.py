@@ -44,15 +44,16 @@ def generate_day0(reference, device):
         'Loopback0': {}
     }
 
-    # -- PORT  (from reference hwsku, toggle admin_status) --
+    # -- PORT  (only cabled ports from cabling plan) --
     active = set(device['active_ports'])
     cfg['PORT'] = {}
     for port_name in sorted(ref.get('PORT', {}),
                             key=lambda p: int(p.replace('Ethernet', ''))):
+        if port_name not in active:
+            continue
         entry = copy.deepcopy(ref['PORT'][port_name])
-        entry['admin_status'] = 'up' if port_name in active else 'down'
+        entry['admin_status'] = 'up'
         entry['mtu'] = '9100'
-        # drop dhcp_rate_limit — not needed day0
         entry.pop('dhcp_rate_limit', None)
         cfg['PORT'][port_name] = entry
 
