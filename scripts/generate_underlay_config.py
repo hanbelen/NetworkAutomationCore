@@ -126,26 +126,31 @@ def generate_partial_config(device, asn, loopback0_ip, active_ports):
 
 
 def generate_vtysh_commands(device, asn, loopback0_ip, active_ports):
-    """vtysh commands for BGP unnumbered."""
+    """vtysh commands for BGP unnumbered.
+
+    Removes any existing BGP instance first (factory ASN may differ),
+    then configures the new one. No leading spaces — vtysh rejects them.
+    """
     lines = [
         'configure terminal',
+        'no router bgp',
         f'router bgp {asn}',
-        f'  bgp router-id {loopback0_ip}',
-        '  bgp log-neighbor-changes',
-        '  no bgp default ipv4-unicast',
-        '  no bgp ebgp-requires-policy',
-        '  bgp bestpath as-path multipath-relax',
+        f'bgp router-id {loopback0_ip}',
+        'bgp log-neighbor-changes',
+        'no bgp default ipv4-unicast',
+        'no bgp ebgp-requires-policy',
+        'bgp bestpath as-path multipath-relax',
     ]
 
     for port in active_ports:
-        lines.append(f'  neighbor {port} interface remote-as external')
+        lines.append(f'neighbor {port} interface remote-as external')
 
-    lines.append('  address-family ipv4 unicast')
-    lines.append(f'    network {loopback0_ip}/32')
-    lines.append('    redistribute connected')
+    lines.append('address-family ipv4 unicast')
+    lines.append(f'network {loopback0_ip}/32')
+    lines.append('redistribute connected')
     for port in active_ports:
-        lines.append(f'    neighbor {port} activate')
-    lines.append('  exit-address-family')
+        lines.append(f'neighbor {port} activate')
+    lines.append('exit-address-family')
 
     lines.append('exit')
     lines.append('end')
