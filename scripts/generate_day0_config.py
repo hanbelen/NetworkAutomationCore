@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Generate minimal SONiC Day0 config_db.json for each discovered device.
 
-Takes the reference config_db.json (with full PORT table / hwsku defaults)
-and strips it down to a clean baseline:
-
-  KEPT    : DEVICE_METADATA, MGMT_INTERFACE, LOOPBACK_INTERFACE, PORT, FEATURE, VERSIONS
-  UPDATED : hostname, device type, mgmt IP, port admin_status per cabling plan
-  STRIPPED: BGP_NEIGHBOR, INTERFACE IPs, CRM, AUTO_TECHSUPPORT, LOGGER,
-            BANNER_MESSAGE, KDUMP, PASSW_HARDENING, SYSLOG_*, SNMP, etc.
+Takes default.json (clean baseline with PORT table and empty interfaces)
+and injects per-device values:
+  - DEVICE_METADATA: hostname, mac, type (LeafRouter/SpineRouter)
+  - MGMT_INTERFACE:  eth0 with management IP and gateway
 """
 
 import argparse
@@ -17,53 +14,22 @@ import os
 import sys
 
 
-def generate_day0(reference, device):
-    """Return a minimal config_db dict for *device*."""
-    ref = reference
-    cfg = {}
+def generate_day0(default, device):
+    """Return a config_db dict for *device* based on default.json."""
+    cfg = copy.deepcopy(default)
 
     # -- DEVICE_METADATA --
-    ref_meta = ref['DEVICE_METADATA']['localhost']
-    cfg['DEVICE_METADATA'] = {
-        'localhost': {
-            'hostname':     device['hostname'],
-            'hwsku':        ref_meta['hwsku'],
-            'platform':     ref_meta['platform'],
-            'type':         device['device_type'],
-            'buffer_model': ref_meta.get('buffer_model', 'traditional'),
-        }
-    }
+    cfg['DEVICE_METADATA']['localhost']['hostname'] = device['hostname']
+    cfg['DEVICE_METADATA']['localhost']['type'] = device['device_type']
 
     # -- MGMT_INTERFACE --
+    mgmt_prefix = device.get('mgmt_prefix', 22)
+    mgmt_gateway = device.get('mgmt_gateway', '')
     cfg['MGMT_INTERFACE'] = {
-        f"eth0|{device['mgmt_ip']}/22": {}
+        f"eth0|{device['mgmt_ip']}/{mgmt_prefix}": {
+            'gwaddr': mgmt_gateway,
+        }
     }
-
-    # -- LOOPBACK_INTERFACE  (placeholder, no IP yet) --
-    cfg['LOOPBACK_INTERFACE'] = {
-        'Loopback0': {}
-    }
-
-    # -- PORT  (only cabled ports from cabling plan) --
-    active = set(device['active_ports'])
-    cfg['PORT'] = {}
-    for port_name in sorted(ref.get('PORT', {}),
-                            key=lambda p: int(p.replace('Ethernet', ''))):
-        if port_name not in active:
-            continue
-        entry = copy.deepcopy(ref['PORT'][port_name])
-        entry['admin_status'] = 'up'
-        entry['mtu'] = '9100'
-        entry.pop('dhcp_rate_limit', None)
-        cfg['PORT'][port_name] = entry
-
-    # -- FEATURE  (keep reference states) --
-    if 'FEATURE' in ref:
-        cfg['FEATURE'] = copy.deepcopy(ref['FEATURE'])
-
-    # -- VERSIONS  (SONiC may expect this) --
-    if 'VERSIONS' in ref:
-        cfg['VERSIONS'] = copy.deepcopy(ref['VERSIONS'])
 
     return cfg
 
@@ -73,31 +39,25 @@ def main():
         description='Generate SONiC Day0 config_db.json per device')
     parser.add_argument('devices_json',
                         help='Path to devices.json from discover_site.py')
-    parser.add_argument('reference_config',
-                        help='Path to reference config_db.json')
+    parser.add_argument('default_config',
+                        help='Path to default.json baseline')
     parser.add_argument('--output-dir', default='/tmp/day1/configs',
                         help='Directory for per-device configs')
     args = parser.parse_args()
 
     with open(args.devices_json) as f:
         devices = json.load(f)
-    with open(args.reference_config) as f:
-        reference = json.load(f)
-
-    if 'PORT' not in reference:
-        sys.exit("ERROR: Reference config_db.json has no PORT table.")
+    with open(args.default_config) as f:
+        default = json.load(f)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     for dev in devices:
-        cfg = generate_day0(reference, dev)
+        cfg = generate_day0(default, dev)
         out_path = os.path.join(args.output_dir, f"{dev['hostname']}.json")
         with open(out_path, 'w') as f:
-            json.dump(cfg, f, indent=4, sort_keys=True)
-        active_count = len(dev['active_ports'])
-        total_ports = len(cfg['PORT'])
-        print(f"  {dev['hostname']:<30} "
-              f"{active_count}/{total_ports} ports up  →  {out_path}")
+            json.dump(cfg, f, indent=2, sort_keys=True)
+        print(f"  {dev['hostname']:<30} → {out_path}")
 
     print(f"\nGenerated {len(devices)} configs in {args.output_dir}")
 

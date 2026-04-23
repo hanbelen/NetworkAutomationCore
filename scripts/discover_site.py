@@ -206,6 +206,10 @@ def main():
 
     cidr = derive_mgmt_cidr(site_block, mgmt_prefix)
 
+    # Derive management gateway (first IP + gateway_offset)
+    mgmt_net = ipaddress.ip_network(cidr, strict=False)
+    mgmt_gateway = str(mgmt_net.network_address + gateway_offset)
+
     # ── Discover ──
     os.makedirs(args.output_dir, exist_ok=True)
     print(f"[discover] fping {cidr} ...")
@@ -218,6 +222,8 @@ def main():
         dev = classify_ip(args.site, ip, role_offsets, gateway_offset)
         if dev:
             enrich_device(dev, profiles, border_overrides, border_pod_id)
+            dev['mgmt_prefix'] = mgmt_prefix
+            dev['mgmt_gateway'] = mgmt_gateway
             devices.append(dev)
 
     if not devices:
